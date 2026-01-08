@@ -1,9 +1,7 @@
 package com.fuxionstock.backend.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import lombok.ToString;
+import lombok.*;
 
 import java.math.BigDecimal;
 
@@ -12,7 +10,9 @@ import java.math.BigDecimal;
 @ToString
 @Entity
 @Table(name = "productos" )
-
+@Builder
+@NoArgsConstructor          // ✅ OBLIGATORIO PARA JPA
+@AllArgsConstructor         // ✅ OBLIGATORIO PARA @Builder
 public class Producto {
 
     @Id
@@ -26,7 +26,7 @@ public class Producto {
 
     private String categoria;
 
-    private String Sku;
+    private String sku;
 
     @Column (name = "img_url")
     private String imgUrl;
@@ -35,6 +35,9 @@ public class Producto {
     private Integer sticksPorSobre;
     @Column(name = "precio_referencial" )
     private BigDecimal precioReferencial;
+
+    @Column (name = "estado")
+    private String estado ;
 
 
 
