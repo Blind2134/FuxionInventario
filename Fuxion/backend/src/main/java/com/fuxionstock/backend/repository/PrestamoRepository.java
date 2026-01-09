@@ -23,5 +23,5 @@ public interface PrestamoRepository extends JpaRepository<Prestamo, Long> {
     // Todos los préstamos pendientes
     List<Prestamo> findByEstadoOrderByFechaPrestamoDesc(Prestamo.EstadoPrestamo estado);
 
-    Long countByEstado(String estado);
+    Long countByEstado(Prestamo.EstadoPrestamo estado);
 }

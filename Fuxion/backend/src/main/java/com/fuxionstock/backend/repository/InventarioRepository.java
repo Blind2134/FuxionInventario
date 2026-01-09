@@ -20,22 +20,27 @@ public interface InventarioRepository extends JpaRepository<Inventario, Long> {
     @Query("SELECT COUNT(i) FROM Inventario i WHERE i.stockBajo = true")
     Long countByStockBajo();
 
-    // Obtener productos con stock crítico - CORREGIDO
     @Query("""
-        SELECT new com.fuxionstock.backend.dto.dashboardDTOS.StockCriticoDTO(
-            p.idProducto,
-            p.nombre,
-            CAST(COALESCE(SUM(i.cantidadSobres), 0) AS int),
-            CAST(COALESCE(SUM(i.cantidadSticks), 0) AS int),
-            5,
-            CAST(p.categoria AS string)
-        )
-        FROM Inventario i
-        JOIN i.producto p
-        WHERE i.stockBajo = true
-        GROUP BY p.idProducto, p.nombre, p.categoria
-        ORDER BY (COALESCE(SUM(i.cantidadSobres), 0) + COALESCE(SUM(i.cantidadSticks), 0)) ASC
-    """)
+    SELECT new com.fuxionstock.backend.dto.dashboardDTOS.StockCriticoDTO(
+        p.idProducto,
+        p.nombre,
+        CAST(COALESCE(SUM(i.cantidadSobres), 0) AS int),
+        CAST(COALESCE(SUM(i.cantidadSticks), 0) AS int),
+        5,
+        CAST(p.categoria AS string)
+    )
+    FROM Inventario i
+    JOIN i.producto p
+    GROUP BY p.idProducto, p.nombre, p.categoria
+    HAVING CAST(COALESCE(SUM(i.cantidadSobres), 0) AS int) <= 1
+    ORDER BY COALESCE(SUM(i.cantidadSobres), 0) ASC
+""")
     List<StockCriticoDTO> findProductosConStockBajo();
+
+    @Query("SELECT COUNT(DISTINCT p.idProducto) " +
+            "FROM Inventario i JOIN i.producto p " +
+            "GROUP BY p.idProducto " +
+            "HAVING CAST(COALESCE(SUM(i.cantidadSobres), 0) AS int) <= 1")
+    Long contarProductosEnStockCritico();
 }
 

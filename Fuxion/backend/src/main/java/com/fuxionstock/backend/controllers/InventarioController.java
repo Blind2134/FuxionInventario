@@ -85,9 +85,8 @@ public class InventarioController {
                 prodDto.setCantidadSticks(inv.getCantidadSticks());
                 prodDto.setSticksPorSobre(inv.getProducto().getSticksPorSobre());
 
-                // Detectar stock bajo (menos de 1 sobre o menos de 5 sticks)
-                boolean stockBajo = inv.getCantidadSobres() < 1 && inv.getCantidadSticks() < 5;
-                prodDto.setStockBajo(stockBajo);
+                // Usar el campo stockBajo de la entidad
+                prodDto.setStockBajo(inv.getStockBajo() != null ? inv.getStockBajo() : false);
 
                 productos.add(prodDto);
                 totalSobres += inv.getCantidadSobres();
@@ -115,7 +114,7 @@ public class InventarioController {
     // (Cuando un socio te envía productos)
     // ==========================================
     @PostMapping("/entrada")
-    @Transactional // <--- Agrega esto para revertir cambios si algo falla
+    @Transactional
     public ResponseEntity<?> registrarEntrada(@RequestBody RegistrarEntradaDTO dto) {
         try {
             Usuario socio = usuarioRepository.findById(dto.getIdSocio())
@@ -141,6 +140,10 @@ public class InventarioController {
 
                 inv.setCantidadSobres(inv.getCantidadSobres() + prodDto.getCantidadSobres());
                 inv.setCantidadSticks(inv.getCantidadSticks() + prodDto.getCantidadSticks());
+
+                // ⭐ CALCULAR STOCK BAJO
+                inv.calcularStockBajo();
+
                 inventarioRepository.save(inv);
 
                 // Registrar Movimiento de SOBRES
@@ -164,10 +167,10 @@ public class InventarioController {
     }
 
     // ==========================================
-    // 4. ABRIR SOBRE (CORREGIDO)
+    // 4. ABRIR SOBRE
     // ==========================================
     @PostMapping("/abrir-sobre")
-    @Transactional // <--- Vital aquí
+    @Transactional
     public ResponseEntity<?> abrirSobre(@RequestBody AbrirSobreDTO dto) {
         try {
             Usuario socio = usuarioRepository.findById(dto.getIdSocio())
@@ -190,6 +193,10 @@ public class InventarioController {
             // Actualizar stock
             inv.setCantidadSobres(inv.getCantidadSobres() - dto.getCantidadSobres());
             inv.setCantidadSticks(inv.getCantidadSticks() + sticksGenerados);
+
+            // ⭐ CALCULAR STOCK BAJO
+            inv.calcularStockBajo();
+
             inventarioRepository.save(inv);
 
             // 1. Registrar SALIDA de Sobres
@@ -197,7 +204,7 @@ public class InventarioController {
                     MovimientoStock.UnidadMedida.SOBRE_CERRADO, -dto.getCantidadSobres(),
                     "APERTURA", "Se abrieron " + dto.getCantidadSobres() + " sobres");
 
-            // 2. Registrar ENTRADA de Sticks (FALTABA ESTO)
+            // 2. Registrar ENTRADA de Sticks
             registrarMovimiento(almacen, socio, producto, MovimientoStock.TipoMovimiento.APERTURA_SOBRE,
                     MovimientoStock.UnidadMedida.STICK_SUELTO, sticksGenerados,
                     "APERTURA", "Generados por apertura de sobres");
@@ -226,7 +233,6 @@ public class InventarioController {
         m.setCantidad(cant);
         m.setReferenciaTipo(ref);
         m.setObservacion(obs);
-        // Asumiendo que tienes un campo fecha o @PrePersist en la entidad
         m.setFecha(java.time.LocalDateTime.now());
         movimientoRepository.save(m);
     }

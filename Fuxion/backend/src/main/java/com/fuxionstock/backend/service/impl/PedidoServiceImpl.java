@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.ArrayList; // Importante para inicializar lista si es necesario
+import java.util.ArrayList;
 
 @Service
 @RequiredArgsConstructor
@@ -48,7 +48,7 @@ public class PedidoServiceImpl implements PedidoService {
         nuevoPedido.setFechaCreacion(LocalDateTime.now());
         nuevoPedido.setCodigoPedido("PED-" + System.currentTimeMillis());
 
-        // Inicializamos la lista de detalles para evitar NullPointerException
+        // Inicializamos la lista de detalles
         if (nuevoPedido.getDetalles() == null) {
             nuevoPedido.setDetalles(new ArrayList<>());
         }
@@ -57,10 +57,7 @@ public class PedidoServiceImpl implements PedidoService {
         almacen.setIdAlmacen(1L);
         nuevoPedido.setAlmacen(almacen);
 
-        // =====================================================================
-        // CAMBIO CLAVE 1: GUARDAR EL PEDIDO ANTES DE PROCESAR ITEMS
-        // Esto genera el ID del pedido en la BD para que los préstamos puedan vincularse
-        // =====================================================================
+        // Guardar el pedido antes de procesar items (para generar ID)
         nuevoPedido = pedidoRepository.save(nuevoPedido);
 
         BigDecimal totalVenta = BigDecimal.ZERO;
@@ -94,16 +91,17 @@ public class PedidoServiceImpl implements PedidoService {
 
             inv.setCantidadSobres(inv.getCantidadSobres() - sobresPedidos);
             inv.setCantidadSticks(inv.getCantidadSticks() - sticksPedidos);
+
+            // ⭐ CALCULAR STOCK BAJO DESPUÉS DE RESTAR
+            inv.calcularStockBajo();
+
             inventarioRepository.save(inv);
 
             // D. REGISTRAR PRÉSTAMO (SI APLICA)
             if (!duenoStock.getIdUsuario().equals(vendedor.getIdUsuario())) {
                 Prestamo prestamo = new Prestamo();
                 prestamo.setAlmacen(nuevoPedido.getAlmacen());
-
-                // AHORA ESTO FUNCIONA PORQUE nuevoPedido YA TIENE ID (del paso CAMBIO CLAVE 1)
                 prestamo.setPedidoOrigen(nuevoPedido);
-
                 prestamo.setSocioDeudor(vendedor);
                 prestamo.setSocioAcreedor(duenoStock);
                 prestamo.setProducto(producto);
@@ -112,7 +110,7 @@ public class PedidoServiceImpl implements PedidoService {
                 prestamo.setFechaPrestamo(LocalDateTime.now());
                 prestamo.setEstado(Prestamo.EstadoPrestamo.PENDIENTE);
 
-                prestamoRepository.save(prestamo); // ¡Ya no dará error!
+                prestamoRepository.save(prestamo);
             }
 
             // E. CÁLCULOS
@@ -127,10 +125,9 @@ public class PedidoServiceImpl implements PedidoService {
 
             // F. DETALLE
             DetallePedido detalle = new DetallePedido();
-            detalle.setPedido(nuevoPedido); // Vinculamos al pedido guardado
+            detalle.setPedido(nuevoPedido);
             detalle.setProducto(producto);
             detalle.setDuenoStock(duenoStock);
-
             detalle.setCantidadSobres(sobresPedidos);
             detalle.setCantidadSticks(sticksPedidos);
             detalle.setEsRegaloSobre(item.isEsRegaloSobre());
@@ -141,18 +138,12 @@ public class PedidoServiceImpl implements PedidoService {
             nuevoPedido.getDetalles().add(detalle);
         }
 
-        // =====================================================================
-        // CAMBIO CLAVE 2: ACTUALIZAR Y GUARDAR DE NUEVO
-        // Ahora que sabemos el total y agregamos los detalles, guardamos otra vez
-        // =====================================================================
+        // Actualizar monto total y guardar
         nuevoPedido.setMontoTotalVenta(totalVenta);
 
         return pedidoRepository.save(nuevoPedido);
     }
 
-    // ==========================================================
-    // MÉTODO 2: CONFIRMAR ENTREGA (Sin cambios)
-    // ==========================================================
     @Override
     public Pedido confirmarEntregaAlMotorizado(Long idPedido) {
         Pedido pedido = pedidoRepository.findById(idPedido)

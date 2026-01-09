@@ -180,6 +180,7 @@ public class PrestamoController {
             // 3. Restar del inventario del acreedor (Salida)
             invAcreedor.setCantidadSobres(invAcreedor.getCantidadSobres() - cantSobres);
             invAcreedor.setCantidadSticks(invAcreedor.getCantidadSticks() - cantSticks);
+            invAcreedor.calcularStockBajo();
             inventarioRepository.save(invAcreedor);
 
             // 4. Sumar al inventario del deudor (Entrada)
@@ -200,6 +201,7 @@ public class PrestamoController {
 
             invDeudor.setCantidadSobres(invDeudor.getCantidadSobres() + cantSobres);
             invDeudor.setCantidadSticks(invDeudor.getCantidadSticks() + cantSticks);
+            invAcreedor.calcularStockBajo();
             inventarioRepository.save(invDeudor);
 
             // 5. Registrar la entidad PRESTAMO

@@ -2,6 +2,7 @@ package com.fuxionstock.backend.service.impl;
 
 import com.fuxionstock.backend.dto.dashboardDTOS.*;
 import com.fuxionstock.backend.entity.Pedido;
+import com.fuxionstock.backend.entity.Prestamo;
 import com.fuxionstock.backend.repository.*;
 import com.fuxionstock.backend.service.DashboardService;
 import lombok.RequiredArgsConstructor;
@@ -68,12 +69,12 @@ public class DashboardServiceImpl implements DashboardService {
         Double ventasMes = pedidoRepository.sumMontoByFechaCreacionBetween(inicioMes, LocalDateTime.now());
         kpis.setVentasMes(ventasMes != null ? ventasMes : 0.0);
 
-        // Productos con stock bajo (aquí defines tu lógica de "stock bajo")
-        Long stockBajo = inventarioRepository.countByStockBajo();
-        kpis.setStockBajo(stockBajo);
+        // Productos con stock bajo
+        List<StockCriticoDTO> listaCritica = obtenerStockCritico(); // Reutilizamos el método privado
+        kpis.setStockBajo((long) listaCritica.size()); // Ahora será 1
 
-        // Préstamos pendientes
-        Long prestamosPendientes = prestamoRepository.countByEstado("PENDIENTE");
+        // Préstamos pendientes (CORREGIDO: Usando Enum)
+        Long prestamosPendientes = prestamoRepository.countByEstado(Prestamo.EstadoPrestamo.PENDIENTE);
         kpis.setPrestamosPendientes(prestamosPendientes);
 
         // Socios activos
@@ -96,14 +97,14 @@ public class DashboardServiceImpl implements DashboardService {
 
         List<Pedido> pedidos = pedidoRepository.findByFechaCreacionBetween(inicioDateTime, finDateTime);
 
-        // Agrupar por fecha y sumar montos (convertir BigDecimal a Double)
+        // Agrupar por fecha y sumar montos
         Map<LocalDate, Double> ventasPorDia = pedidos.stream()
                 .collect(Collectors.groupingBy(
                         p -> p.getFechaCreacion().toLocalDate(),
                         Collectors.summingDouble(p -> p.getMontoTotalVenta() != null ? p.getMontoTotalVenta().doubleValue() : 0.0)
                 ));
 
-        // Crear lista con todas las fechas (incluir días sin ventas)
+        // Crear lista con todas las fechas
         List<VentaDiaDTO> resultado = new ArrayList<>();
         for (LocalDate fecha = fechaInicio; !fecha.isAfter(fechaFin); fecha = fecha.plusDays(1)) {
             Double monto = ventasPorDia.getOrDefault(fecha, 0.0);
@@ -122,13 +123,16 @@ public class DashboardServiceImpl implements DashboardService {
     }
 
     // ========================================================================
-    // MÉTODOS PRIVADOS - Pedidos por Estado
+    // MÉTODOS PRIVADOS - Pedidos por Estado (CORREGIDO AQUÍ)
     // ========================================================================
     private List<PedidoEstadoDTO> obtenerPedidosPorEstado() {
         List<Object[]> resultados = pedidoRepository.countGroupByEstado();
 
         return resultados.stream()
-                .map(r -> new PedidoEstadoDTO((String) r[0], (Long) r[1]))
+                .map(r -> new PedidoEstadoDTO(
+                        r[0].toString(), // <--- CORRECCIÓN: Usar .toString() en lugar de (String)
+                        (Long) r[1]
+                ))
                 .collect(Collectors.toList());
     }
 
@@ -144,7 +148,7 @@ public class DashboardServiceImpl implements DashboardService {
                         p.getCodigoPedido(),
                         p.getClienteNombre(),
                         p.getMontoTotalVenta() != null ? p.getMontoTotalVenta().doubleValue() : 0.0,
-                        p.getEstado().name(), // Convierte enum a String
+                        p.getEstado().name(), // Correcto: Enum a String
                         p.getFechaCreacion()
                 ))
                 .collect(Collectors.toList());
@@ -154,8 +158,6 @@ public class DashboardServiceImpl implements DashboardService {
     // MÉTODOS PRIVADOS - Stock Crítico
     // ========================================================================
     private List<StockCriticoDTO> obtenerStockCritico() {
-        // Esta query debe estar en tu InventarioRepository
-        // Retorna productos con stock bajo
         return inventarioRepository.findProductosConStockBajo();
     }
 
@@ -184,8 +186,8 @@ public class DashboardServiceImpl implements DashboardService {
             ));
         }
 
-        // Alerta de préstamos pendientes
-        Long prestamosPendientes = prestamoRepository.countByEstado("PENDIENTE");
+        // Alerta de préstamos pendientes (CORREGIDO: Usando Enum)
+        Long prestamosPendientes = prestamoRepository.countByEstado(Prestamo.EstadoPrestamo.PENDIENTE);
         if (prestamosPendientes > 0) {
             alertas.add(new AlertaDTO(
                     "PRESTAMOS_PENDIENTES",
@@ -194,8 +196,8 @@ public class DashboardServiceImpl implements DashboardService {
             ));
         }
 
-        // Alerta de pedidos pendientes (convertir String a EstadoPedido si es enum)
-        Long pedidosPendientes = pedidoRepository.countByEstado(com.fuxionstock.backend.entity.Pedido.EstadoPedido.PENDIENTE);
+        // Alerta de pedidos pendientes (CORREGIDO: Usando Enum)
+        Long pedidosPendientes = pedidoRepository.countByEstado(Pedido.EstadoPedido.PENDIENTE);
         if (pedidosPendientes > 0) {
             alertas.add(new AlertaDTO(
                     "PEDIDOS_PENDIENTES",
