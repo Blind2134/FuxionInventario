@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+// 1. AÑADIDO: FiGrid a la lista de imports
 import {
   FiHome,
   FiPackage,
@@ -8,6 +9,8 @@ import {
   FiBarChart2,
   FiSettings,
   FiLogOut,
+  FiGrid,
+  FiRepeat,
 } from "react-icons/fi";
 
 const Sidebar = () => {
@@ -16,6 +19,18 @@ const Sidebar = () => {
     { path: "/productos", icon: FiPackage, label: "Productos" },
     { path: "/inventario", icon: FiArchive, label: "Inventario" },
     { path: "/pedidos", icon: FiShoppingCart, label: "Pedidos" },
+    {
+      path: "/pedidos/tablero",
+      icon: FiGrid, // 2. CORREGIDO: Pasamos la referencia, no <FiGrid />
+      label: "Tablero Estados",
+    },
+    {
+      path: "/pedidos/por-vendedor",
+      icon: FiUsers, // 2. CORREGIDO: Pasamos la referencia, no <FiUsers />
+      label: "Ventas por Socio",
+    },
+
+    { path: "/prestamos", icon: FiRepeat, label: "Préstamos" },
     { path: "/usuarios", icon: FiUsers, label: "Socios" },
     { path: "/reportes", icon: FiBarChart2, label: "Reportes" },
   ];
@@ -51,6 +66,7 @@ const Sidebar = () => {
             >
               {({ isActive }) => (
                 <>
+                  {/* Aquí es donde React usa la referencia para crear el icono */}
                   <item.icon
                     size={20}
                     className={

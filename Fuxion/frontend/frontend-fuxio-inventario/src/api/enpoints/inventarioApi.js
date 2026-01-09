@@ -30,4 +30,17 @@ export const inventarioApi = {
     const response = await api.get(`/inventario/movimientos/socio/${idSocio}`);
     return response.data;
   },
+
+  getSociosConStock: async (idProducto) => {
+    try {
+      // Necesitarás este endpoint en tu Backend (te digo cómo al final si no lo tienes)
+      const response = await axios.get(
+        `/inventario/producto/${idProducto}/con-stock`
+      );
+      return response.data; // Debería devolver lista de [{ dueno, cantidadSticks }, ...]
+    } catch (error) {
+      console.error("Error buscando socios con stock:", error);
+      return [];
+    }
+  },
 };

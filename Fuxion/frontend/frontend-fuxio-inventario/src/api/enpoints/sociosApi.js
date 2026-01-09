@@ -42,4 +42,10 @@ export const sociosApi = {
     const response = await api.delete(`/usuarios/${id}`);
     return response.data;
   },
+
+  // --- AGREGADO: Para cargar el historial en el perfil ---
+  getPedidos: async () => {
+    const response = await api.get("/pedidos");
+    return response.data;
+  },
 };

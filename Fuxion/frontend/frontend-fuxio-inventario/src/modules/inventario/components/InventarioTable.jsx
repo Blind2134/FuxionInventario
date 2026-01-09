@@ -37,58 +37,82 @@ const InventarioTable = ({ inventario, onAbrirSobre }) => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {inventario.map((item, index) => (
-              <tr
-                key={
-                  item.idInventario ||
-                  `${item.idProducto}-${item.idSocio}-${index}`
-                }
-                className={`hover:bg-gray-50 ${
-                  item.stockBajo ? "bg-red-50" : ""
-                }`}
-              >
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    {item.stockBajo && (
-                      <FiAlertTriangle className="text-red-500" size={16} />
-                    )}
-                    <span className="text-sm font-medium text-gray-900">
-                      {item.nombreProducto}
+            {inventario.map((item, index) => {
+              // LÓGICA INTELIGENTE DE ALERTA:
+              // Solo mostrar alerta si no hay sobres (0) O si queda 1 sobre y pocos sticks (<5)
+              const mostrarAlerta =
+                item.cantidadSobres === 0 ||
+                (item.cantidadSobres === 1 && item.cantidadSticks < 5);
+
+              return (
+                <tr
+                  key={
+                    item.idInventario ||
+                    `${item.idProducto}-${item.idSocio}-${index}`
+                  }
+                  className={`hover:bg-gray-50 ${
+                    mostrarAlerta ? "bg-red-50" : ""
+                  }`}
+                >
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      {mostrarAlerta && (
+                        <FiAlertTriangle
+                          className="text-red-500"
+                          size={16}
+                          title="Stock Crítico"
+                        />
+                      )}
+                      <span className="text-sm font-medium text-gray-900">
+                        {item.nombreProducto}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                      {item.categoria || "Sin categoría"}
                     </span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
-                    {item.categoria || "Sin categoría"}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <span className="text-lg font-bold text-gray-900">
-                    {item.cantidadSobres}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <span className="text-lg font-bold text-green-600">
-                    {item.cantidadSticks}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
-                  {item.sticksPorSobre}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-center">
-                  {item.cantidadSobres > 0 && (
-                    <button
-                      onClick={() => onAbrirSobre(item)}
-                      className="btn btn-secondary text-xs"
-                      title="Abrir sobre para vender sticks"
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <span
+                      className={`text-lg font-bold ${
+                        item.cantidadSobres === 0
+                          ? "text-red-600"
+                          : "text-gray-900"
+                      }`}
                     >
-                      <FiPackage className="inline mr-1" size={14} />
-                      Abrir Sobre
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                      {item.cantidadSobres}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <span
+                      className={`text-lg font-bold ${
+                        mostrarAlerta && item.cantidadSticks === 0
+                          ? "text-red-600"
+                          : "text-green-600"
+                      }`}
+                    >
+                      {item.cantidadSticks}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
+                    {item.sticksPorSobre}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    {item.cantidadSobres > 0 && (
+                      <button
+                        onClick={() => onAbrirSobre(item)}
+                        className="btn btn-secondary text-xs"
+                        title="Abrir sobre para vender sticks"
+                      >
+                        <FiPackage className="inline mr-1" size={14} />
+                        Abrir Sobre
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -9,32 +9,50 @@ import AbrirSobreModal from "../components/AbrirSobreModal";
 
 const InventarioPage = () => {
   const { inventario, loading: loadingInventario, refetch } = useInventario();
-  console.log("Data de inventario:", inventario);
   const { socios, loading: loadingSocios } = useSocios();
   const { abrirSobre, loading: loadingAbrir } = useAbrirSobre();
 
   const [selectedSocio, setSelectedSocio] = useState("");
   const [productoParaAbrir, setProductoParaAbrir] = useState(null);
 
-  // Filtrar inventario por socio
+  // =======================================================
+  // 1. SOLUCIÓN TABLA: Filtrar Y APLANAR los datos
+  // =======================================================
+  // Convertimos la estructura compleja (item.producto.nombre)
+  // a una simple (item.nombreProducto) para que la tabla no se confunda.
   const inventarioFiltrado = selectedSocio
-    ? inventario.filter(
-        (item) => item.dueno?.idUsuario === parseInt(selectedSocio)
-      )
-    : inventario;
+    ? inventario
+        .filter((item) => item.dueno?.idUsuario === parseInt(selectedSocio))
+        .map((item) => ({
+          ...item,
+          // Mapeo seguro: Si producto es null, ponemos un texto por defecto
+          idProducto: item.producto?.idProducto,
+          nombreProducto: item.producto?.nombre || "Producto Desconocido",
+          categoria: item.producto?.categoria || "Sin Categoría",
+          sticksPorSobre: item.producto?.sticksPorSobre || 0,
+          sku: item.producto?.sku || "S/N",
+          imgUrl: item.producto?.imgUrl,
+        }))
+    : []; // Si no hay socio, no usamos esta lista directamente para la tabla
 
-  // Agrupar inventario por socio
+  // =======================================================
+  // 2. SOLUCIÓN CARDS: Agrupar con seguridad (Optional Chaining)
+  // =======================================================
   const inventarioPorSocio = inventario.reduce((acc, item) => {
-    if (!item.dueno) return acc;
+    // Si no tiene dueño o producto, saltamos para evitar errores
+    if (!item.dueno || !item.producto) return acc;
 
     const idSocio = item.dueno.idUsuario;
-
     const socio = socios.find((s) => s.idUsuario === idSocio);
-    if (!socio) return acc;
+
+    // Si no encontramos los datos del socio, usamos los del item como respaldo
+    const nombreSocio =
+      socio?.nombre || item.dueno.nombre || "Socio Desconocido";
 
     if (!acc[idSocio]) {
       acc[idSocio] = {
-        socio,
+        socio: socio || item.dueno, // Guardamos el objeto socio completo
+        nombreSocio: nombreSocio,
         productos: [],
         totalSobres: 0,
         totalSticks: 0,
@@ -43,21 +61,21 @@ const InventarioPage = () => {
 
     acc[idSocio].productos.push({
       ...item,
+      // Aplanamos igual que arriba
       idProducto: item.producto.idProducto,
       nombreProducto: item.producto.nombre,
+      categoria: item.producto.categoria,
       sticksPorSobre: item.producto.sticksPorSobre,
     });
 
-    acc[idSocio].totalSobres += item.cantidadSobres;
-    acc[idSocio].totalSticks += item.cantidadSticks;
+    acc[idSocio].totalSobres += item.cantidadSobres || 0;
+    acc[idSocio].totalSticks += item.cantidadSticks || 0;
 
     return acc;
   }, {});
 
-  // Detectar productos con stock bajo
   const productosStockBajo = inventario.filter((item) => item.stockBajo).length;
 
-  // Confirmar abrir sobre
   const handleConfirmarAbrir = async (data) => {
     const result = await abrirSobre(data);
     if (result) {
@@ -91,7 +109,7 @@ const InventarioPage = () => {
         </Link>
       </div>
 
-      {/* Estadísticas rápidas */}
+      {/* Estadísticas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="card bg-blue-50 border-blue-200">
           <div className="flex items-center gap-4">
@@ -114,7 +132,10 @@ const InventarioPage = () => {
             </div>
             <div>
               <div className="text-3xl font-bold text-green-600">
-                {inventario.reduce((sum, item) => sum + item.cantidadSobres, 0)}
+                {inventario.reduce(
+                  (sum, item) => sum + (item.cantidadSobres || 0),
+                  0
+                )}
               </div>
               <div className="text-sm text-gray-600">Total Sobres</div>
             </div>
@@ -148,9 +169,9 @@ const InventarioPage = () => {
             className="input flex-1"
           >
             <option value="">Todos los socios</option>
-            {Object.values(inventarioPorSocio).map(({ socio }) => (
+            {Object.values(inventarioPorSocio).map(({ socio, nombreSocio }) => (
               <option key={socio.idUsuario} value={socio.idUsuario}>
-                {socio.nombre}
+                {nombreSocio}
               </option>
             ))}
           </select>
@@ -165,11 +186,13 @@ const InventarioPage = () => {
         </div>
       </div>
 
-      {/* Inventario por socio */}
+      {/* CONTENIDO PRINCIPAL */}
       {selectedSocio ? (
-        // Vista filtrada por socio
+        // ==========================================
+        // VISTA TABLA (DETALLE UN SOCIO)
+        // ==========================================
         <InventarioTable
-          inventario={inventarioFiltrado}
+          inventario={inventarioFiltrado} // <--- Ahora pasamos la data APLANADA
           onAbrirSobre={(producto) =>
             setProductoParaAbrir({
               ...producto,
@@ -178,23 +201,28 @@ const InventarioPage = () => {
           }
         />
       ) : (
-        // Vista agrupada por socio
+        // ==========================================
+        // VISTA CARDS (TODOS LOS SOCIOS)
+        // ==========================================
         <div className="space-y-6">
           {Object.values(inventarioPorSocio).map(
-            ({ socio, productos, totalSobres, totalSticks }) => (
+            ({ socio, nombreSocio, productos, totalSobres, totalSticks }) => (
               <div key={socio.idUsuario} className="card">
                 <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                      {socio.nombre.charAt(0)}
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                      {nombreSocio.charAt(0)}
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-gray-900">
-                        {socio.nombre}
+                        {nombreSocio}
                       </h3>
                       <p className="text-sm text-gray-600">
-                        {productos.length} productos • {totalSobres} sobres •{" "}
-                        {totalSticks} sticks
+                        {productos.length} productos •{" "}
+                        <span className="font-medium text-blue-600">
+                          {totalSobres} sobres
+                        </span>{" "}
+                        • {totalSticks} sticks
                       </p>
                     </div>
                   </div>
@@ -210,33 +238,42 @@ const InventarioPage = () => {
                   {productos.slice(0, 4).map((prod) => (
                     <div
                       key={prod.idProducto}
-                      className={`p-3 rounded-lg ${
+                      className={`p-3 rounded-lg border transition-colors ${
                         prod.stockBajo
-                          ? "bg-red-50 border border-red-200"
-                          : "bg-gray-50"
+                          ? "bg-red-50 border-red-200"
+                          : "bg-gray-50 border-gray-100 hover:border-blue-200"
                       }`}
                     >
-                      <div className="text-xs text-gray-600 truncate">
+                      <div
+                        className="text-xs font-medium text-gray-700 truncate mb-1"
+                        title={prod.nombreProducto}
+                      >
                         {prod.nombreProducto}
                       </div>
-                      <div className="flex items-baseline gap-2 mt-1">
-                        <span className="text-lg font-bold text-blue-600">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-bold text-blue-600">
                           {prod.cantidadSobres}
                         </span>
-                        <span className="text-xs text-gray-500">sobres</span>
-                      </div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-sm font-semibold text-green-600">
-                          {prod.cantidadSticks}
+                        <span className="text-[10px] uppercase text-gray-500 tracking-wide">
+                          sobres
                         </span>
-                        <span className="text-xs text-gray-500">sticks</span>
                       </div>
+                      {prod.cantidadSticks > 0 && (
+                        <div className="flex items-baseline gap-2 mt-0.5">
+                          <span className="text-sm font-bold text-green-600">
+                            {prod.cantidadSticks}
+                          </span>
+                          <span className="text-[10px] uppercase text-gray-500 tracking-wide">
+                            sticks
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {productos.length > 4 && (
-                    <div className="p-3 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <span className="text-sm text-gray-600">
-                        +{productos.length - 4} más
+                    <div className="p-3 bg-gray-100 rounded-lg flex items-center justify-center border border-dashed border-gray-300">
+                      <span className="text-sm font-medium text-gray-500">
+                        +{productos.length - 4} más...
                       </span>
                     </div>
                   )}

@@ -22,33 +22,16 @@ import InventarioPage from "../modules/inventario/pages/InventarioPage";
 import RegistrarEntradaPage from "../modules/inventario/pages/RegistrarEntradaPage";
 import InventarioSocioPage from "../modules/inventario/pages/InventarioSocioPage";
 
-// Páginas temporales
-const DashboardPage = () => (
-  <div>
-    <h1 className="text-3xl font-bold text-gray-900 mb-4">Dashboard</h1>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div className="card">
-        <h3 className="text-lg font-semibold text-gray-700">Total Productos</h3>
-        <p className="text-3xl font-bold text-blue-600 mt-2">156</p>
-      </div>
-      <div className="card">
-        <h3 className="text-lg font-semibold text-gray-700">Pedidos Hoy</h3>
-        <p className="text-3xl font-bold text-green-600 mt-2">23</p>
-      </div>
-      <div className="card">
-        <h3 className="text-lg font-semibold text-gray-700">Stock Bajo</h3>
-        <p className="text-3xl font-bold text-red-600 mt-2">8</p>
-      </div>
-    </div>
-  </div>
-);
+// Páginas del módulo de pedidos (NUEVAS)
+import NuevoPedidoPage from "../modules/pedidos/pages/NuevoPedidoPage";
+import DetallePedidoPage from "../modules/pedidos/pages/DetallePedidoPage";
+import PedidosPage from "../modules/pedidos/pages/PedidosPage";
+import PedidosPorVendedorPage from "../modules/pedidos/pages/PedidosPorVendedorPage";
+import PedidosPorEstadoPage from "../modules/pedidos/pages/PedidosPorEstadoPage";
 
-const PedidosPage = () => (
-  <div>
-    <h1 className="text-3xl font-bold text-gray-900">🚚 Pedidos</h1>
-    <p className="text-gray-600 mt-2">Gestión de pedidos (Próximamente)</p>
-  </div>
-);
+import PrestamosPage from "../modules/prestamos/pages/PrestamosPage";
+
+import DashboardPage from "../modules/dashboard/pages/DashboardPage";
 
 const ReportesPage = () => (
   <div>
@@ -89,8 +72,26 @@ const AppRouter = () => {
             path="/inventario/socio/:id"
             element={<InventarioSocioPage />}
           />
+
+          {/* Rutas de Pedidos */}
+          <Route path="pedidos" element={<PedidosPage />} />
+          <Route path="pedidos/nuevo" element={<NuevoPedidoPage />} />
+          <Route
+            path="pedidos/detalle/:idPedido"
+            element={<DetallePedidoPage />}
+          />
+
+          {/* --- NUEVAS RUTAS --- */}
+          <Route
+            path="pedidos/por-vendedor"
+            element={<PedidosPorVendedorPage />}
+          />
+          <Route path="pedidos/tablero" element={<PedidosPorEstadoPage />} />
+
+          {/* --- AGREGAR ESTO: Nueva Ruta de Préstamos --- */}
+          <Route path="/prestamos" element={<PrestamosPage />} />
+
           {/* Otros módulos (temporales) */}
-          <Route path="/pedidos" element={<PedidosPage />} />
           <Route path="/reportes" element={<ReportesPage />} />
         </Route>
       </Routes>
