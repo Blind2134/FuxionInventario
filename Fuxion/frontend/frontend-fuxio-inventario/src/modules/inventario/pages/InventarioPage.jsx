@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { FiPackage, FiPlus, FiUsers, FiAlertTriangle } from "react-icons/fi";
+import {
+  FiPackage,
+  FiPlus,
+  FiUsers,
+  FiAlertTriangle,
+  FiSearch,
+  FiX,
+} from "react-icons/fi";
 import { useInventario } from "../hooks/useInventario";
 import { useSocios } from "../../usuarios/hooks/useSocios";
 import { useAbrirSobre } from "../hooks/useAbrirSobre";
@@ -15,17 +22,33 @@ const InventarioPage = () => {
   const [selectedSocio, setSelectedSocio] = useState("");
   const [productoParaAbrir, setProductoParaAbrir] = useState(null);
 
+  // ESTADO PARA EL BUSCADOR
+  const [searchTerm, setSearchTerm] = useState("");
+
   // =======================================================
-  // 1. SOLUCIÓN TABLA: Filtrar Y APLANAR los datos
+  // 1. FILTRO MAESTRO (Buscador Global)
   // =======================================================
-  // Convertimos la estructura compleja (item.producto.nombre)
-  // a una simple (item.nombreProducto) para que la tabla no se confunda.
+  // Primero filtramos toda la data cruda según lo que escriba el usuario.
+  const inventarioFiltradoPorTexto = inventario.filter((item) => {
+    if (!searchTerm) return true; // Si no hay búsqueda, pasa todo
+    const termino = searchTerm.toLowerCase();
+
+    // Buscamos coincidencia en Nombre del Producto O Nombre del Socio
+    return (
+      item.producto?.nombre?.toLowerCase().includes(termino) ||
+      item.dueno?.nombre?.toLowerCase().includes(termino)
+    );
+  });
+
+  // =======================================================
+  // 2. SOLUCIÓN TABLA: Filtrar Y APLANAR los datos
+  // =======================================================
+  // Usamos 'inventarioFiltradoPorTexto' en lugar de 'inventario' directo
   const inventarioFiltrado = selectedSocio
-    ? inventario
+    ? inventarioFiltradoPorTexto
         .filter((item) => item.dueno?.idUsuario === parseInt(selectedSocio))
         .map((item) => ({
           ...item,
-          // Mapeo seguro: Si producto es null, ponemos un texto por defecto
           idProducto: item.producto?.idProducto,
           nombreProducto: item.producto?.nombre || "Producto Desconocido",
           categoria: item.producto?.categoria || "Sin Categoría",
@@ -33,25 +56,24 @@ const InventarioPage = () => {
           sku: item.producto?.sku || "S/N",
           imgUrl: item.producto?.imgUrl,
         }))
-    : []; // Si no hay socio, no usamos esta lista directamente para la tabla
+    : [];
 
   // =======================================================
-  // 2. SOLUCIÓN CARDS: Agrupar con seguridad (Optional Chaining)
+  // 3. SOLUCIÓN CARDS: Agrupar con seguridad
   // =======================================================
-  const inventarioPorSocio = inventario.reduce((acc, item) => {
-    // Si no tiene dueño o producto, saltamos para evitar errores
+  // También usamos 'inventarioFiltradoPorTexto' aquí para que las cards
+  // desaparezcan si no coinciden con la búsqueda.
+  const inventarioPorSocio = inventarioFiltradoPorTexto.reduce((acc, item) => {
     if (!item.dueno || !item.producto) return acc;
 
     const idSocio = item.dueno.idUsuario;
     const socio = socios.find((s) => s.idUsuario === idSocio);
-
-    // Si no encontramos los datos del socio, usamos los del item como respaldo
     const nombreSocio =
       socio?.nombre || item.dueno.nombre || "Socio Desconocido";
 
     if (!acc[idSocio]) {
       acc[idSocio] = {
-        socio: socio || item.dueno, // Guardamos el objeto socio completo
+        socio: socio || item.dueno,
         nombreSocio: nombreSocio,
         productos: [],
         totalSobres: 0,
@@ -61,7 +83,6 @@ const InventarioPage = () => {
 
     acc[idSocio].productos.push({
       ...item,
-      // Aplanamos igual que arriba
       idProducto: item.producto.idProducto,
       nombreProducto: item.producto.nombre,
       categoria: item.producto.categoria,
@@ -94,7 +115,7 @@ const InventarioPage = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header con Buscador */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
@@ -103,13 +124,41 @@ const InventarioPage = () => {
           </h1>
           <p className="text-gray-600 mt-1">Control de stock por socio</p>
         </div>
-        <Link to="/inventario/registrar-entrada" className="btn btn-primary">
+
+        {/* INPUT DE BUSCADOR */}
+        <div className="flex-1 max-w-md mx-4">
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <FiSearch className="text-gray-400 group-focus-within:text-blue-500" />
+            </div>
+            <input
+              type="text"
+              className="block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition duration-150 ease-in-out"
+              placeholder="Buscar producto (ej. NoCarb) o socio..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <FiX />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <Link
+          to="/inventario/registrar-entrada"
+          className="btn btn-primary flex-shrink-0"
+        >
           <FiPlus className="inline mr-2" />
           Registrar Entrada
         </Link>
       </div>
 
-      {/* Estadísticas */}
+      {/* Estadísticas (Calculadas sobre el total real, no el filtrado, para mantener referencia) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="card bg-blue-50 border-blue-200">
           <div className="flex items-center gap-4">
@@ -118,7 +167,8 @@ const InventarioPage = () => {
             </div>
             <div>
               <div className="text-3xl font-bold text-blue-600">
-                {Object.keys(inventarioPorSocio).length}
+                {/* Mostramos total de socios REALES con stock, independientemente del filtro */}
+                {new Set(inventario.map((i) => i.dueno?.idUsuario)).size}
               </div>
               <div className="text-sm text-gray-600">Socios con Stock</div>
             </div>
@@ -157,7 +207,7 @@ const InventarioPage = () => {
         </div>
       </div>
 
-      {/* Filtro por socio */}
+      {/* Filtro por socio (Dropdown) */}
       <div className="card">
         <div className="flex flex-col md:flex-row gap-4 items-center">
           <label className="text-sm font-medium text-gray-700 flex-shrink-0">
@@ -169,9 +219,10 @@ const InventarioPage = () => {
             className="input flex-1"
           >
             <option value="">Todos los socios</option>
-            {Object.values(inventarioPorSocio).map(({ socio, nombreSocio }) => (
+            {/* Aquí usamos la lista completa de socios para no romper el select al buscar */}
+            {socios.map((socio) => (
               <option key={socio.idUsuario} value={socio.idUsuario}>
-                {nombreSocio}
+                {socio.nombre}
               </option>
             ))}
           </select>
@@ -186,13 +237,24 @@ const InventarioPage = () => {
         </div>
       </div>
 
+      {/* MENSAJE SIN RESULTADOS */}
+      {searchTerm && Object.keys(inventarioPorSocio).length === 0 && (
+        <div className="text-center py-10 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+          <div className="text-4xl mb-2">🔍</div>
+          <p className="text-gray-500">
+            No se encontró ningún producto ni socio con:{" "}
+            <span className="font-bold text-gray-700">"{searchTerm}"</span>
+          </p>
+        </div>
+      )}
+
       {/* CONTENIDO PRINCIPAL */}
       {selectedSocio ? (
         // ==========================================
         // VISTA TABLA (DETALLE UN SOCIO)
         // ==========================================
         <InventarioTable
-          inventario={inventarioFiltrado} // <--- Ahora pasamos la data APLANADA
+          inventario={inventarioFiltrado}
           onAbrirSobre={(producto) =>
             setProductoParaAbrir({
               ...producto,
@@ -202,7 +264,7 @@ const InventarioPage = () => {
         />
       ) : (
         // ==========================================
-        // VISTA CARDS (TODOS LOS SOCIOS)
+        // VISTA CARDS (TODOS LOS SOCIOS) - AHORA FILTRABLE
         // ==========================================
         <div className="space-y-6">
           {Object.values(inventarioPorSocio).map(
@@ -218,7 +280,7 @@ const InventarioPage = () => {
                         {nombreSocio}
                       </h3>
                       <p className="text-sm text-gray-600">
-                        {productos.length} productos •{" "}
+                        {productos.length} productos coincidentes •{" "}
                         <span className="font-medium text-blue-600">
                           {totalSobres} sobres
                         </span>{" "}

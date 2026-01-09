@@ -4,19 +4,7 @@ const Topbar = () => {
   return (
     <header className="h-16 bg-white border-b border-gray-200 px-6 flex items-center justify-between sticky top-0 z-10">
       {/* Buscador */}
-      <div className="flex-1 max-w-xl">
-        <div className="relative">
-          <FiSearch
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            size={20}
-          />
-          <input
-            type="text"
-            placeholder="Buscar productos, pedidos..."
-            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
-          />
-        </div>
-      </div>
+      <div className="flex-1 max-w-xl"></div>
 
       {/* Acciones */}
       <div className="flex items-center gap-4">
