@@ -25,4 +25,6 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     // Buscar por nombre (útil para búsqueda)
     List<Usuario> findByNombreContainingIgnoreCase(String nombre);
+
+    Long countByActivoTrue();
 }

@@ -64,7 +64,7 @@ public class PrestamoController {
     public ResponseEntity<?> obtenerPendientes() {
         try {
             List<Prestamo> prestamos = prestamoRepository
-                    .findByEstadoOrderByFechaDesc(Prestamo.EstadoPrestamo.PENDIENTE);
+                    .findByEstadoOrderByFechaPrestamoDesc(Prestamo.EstadoPrestamo.PENDIENTE);
 
             List<PrestamoResponseDTO> response = new ArrayList<>();
             for (Prestamo p : prestamos) {
@@ -86,7 +86,7 @@ public class PrestamoController {
     public ResponseEntity<?> obtenerPorDeudor(@PathVariable Long idSocio) {
         try {
             List<Prestamo> prestamos = prestamoRepository
-                    .findBySocioDeudorIdUsuarioAndEstadoOrderByFechaDesc(
+                    .findBySocioDeudorIdUsuarioAndEstadoOrderByFechaPrestamoDesc(
                             idSocio,
                             Prestamo.EstadoPrestamo.PENDIENTE
                     );
@@ -111,7 +111,7 @@ public class PrestamoController {
     public ResponseEntity<?> obtenerPorAcreedor(@PathVariable Long idSocio) {
         try {
             List<Prestamo> prestamos = prestamoRepository
-                    .findBySocioAcreedorIdUsuarioAndEstadoOrderByFechaDesc(
+                    .findBySocioAcreedorIdUsuarioAndEstadoOrderByFechaPrestamoDesc(
                             idSocio,
                             Prestamo.EstadoPrestamo.PENDIENTE
                     );
@@ -135,7 +135,15 @@ public class PrestamoController {
     @PostMapping
     public ResponseEntity<?> crearPrestamo(@RequestBody CrearPrestamoDTO dto) {
         try {
-            // Validaciones
+            // 0. Sanitizar cantidades (evitar nulos)
+            int cantSobres = dto.getCantidadSobres() != null ? dto.getCantidadSobres() : 0;
+            int cantSticks = dto.getCantidadSticks() != null ? dto.getCantidadSticks() : 0;
+
+            if (cantSobres == 0 && cantSticks == 0) {
+                return ResponseEntity.badRequest().body("Debes prestar al menos un sobre o un stick.");
+            }
+
+            // 1. Validaciones de existencia
             Usuario deudor = usuarioRepository.findById(dto.getIdSocioDeudor())
                     .orElseThrow(() -> new RuntimeException("Deudor no encontrado"));
 
@@ -148,25 +156,33 @@ public class PrestamoController {
             Almacen almacen = almacenRepository.findById(dto.getIdAlmacen())
                     .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
 
-            // Verificar que el acreedor tiene stock suficiente
+            // 2. Verificar que el acreedor tiene stock suficiente de AMBOS
             Inventario invAcreedor = inventarioRepository
                     .findByDuenoIdUsuarioAndProductoIdProducto(
                             acreedor.getIdUsuario(),
                             producto.getIdProducto()
                     )
-                    .orElseThrow(() -> new RuntimeException("El acreedor no tiene este producto"));
+                    .orElseThrow(() -> new RuntimeException("El acreedor no tiene este producto en inventario"));
 
-            if (invAcreedor.getCantidadSticks() < dto.getCantidadSticks()) {
+            // Validar Sobres
+            if (invAcreedor.getCantidadSobres() < cantSobres) {
                 return ResponseEntity.badRequest()
-                        .body("El acreedor no tiene suficientes sticks. Disponibles: "
+                        .body("El acreedor no tiene suficientes SOBRES. Disponibles: "
+                                + invAcreedor.getCantidadSobres());
+            }
+            // Validar Sticks
+            if (invAcreedor.getCantidadSticks() < cantSticks) {
+                return ResponseEntity.badRequest()
+                        .body("El acreedor no tiene suficientes STICKS. Disponibles: "
                                 + invAcreedor.getCantidadSticks());
             }
 
-            // Restar del inventario del acreedor
-            invAcreedor.setCantidadSticks(invAcreedor.getCantidadSticks() - dto.getCantidadSticks());
+            // 3. Restar del inventario del acreedor (Salida)
+            invAcreedor.setCantidadSobres(invAcreedor.getCantidadSobres() - cantSobres);
+            invAcreedor.setCantidadSticks(invAcreedor.getCantidadSticks() - cantSticks);
             inventarioRepository.save(invAcreedor);
 
-            // Sumar al inventario del deudor
+            // 4. Sumar al inventario del deudor (Entrada)
             Inventario invDeudor = inventarioRepository
                     .findByDuenoIdUsuarioAndProductoIdProducto(
                             deudor.getIdUsuario(),
@@ -182,46 +198,53 @@ public class PrestamoController {
                 invDeudor.setCantidadSticks(0);
             }
 
-            invDeudor.setCantidadSticks(invDeudor.getCantidadSticks() + dto.getCantidadSticks());
+            invDeudor.setCantidadSobres(invDeudor.getCantidadSobres() + cantSobres);
+            invDeudor.setCantidadSticks(invDeudor.getCantidadSticks() + cantSticks);
             inventarioRepository.save(invDeudor);
 
-            // Registrar el préstamo
+            // 5. Registrar la entidad PRESTAMO
             Prestamo prestamo = new Prestamo();
             prestamo.setAlmacen(almacen);
             prestamo.setSocioDeudor(deudor);
             prestamo.setSocioAcreedor(acreedor);
             prestamo.setProducto(producto);
-            prestamo.setCantidadSticks(dto.getCantidadSticks());
-            prestamo.setEstado(Prestamo.EstadoPrestamo.PENDIENTE);
 
+            // Guardamos ambos datos
+            prestamo.setCantidadSobres(cantSobres);
+            prestamo.setCantidadSticks(cantSticks);
+
+            prestamo.setEstado(Prestamo.EstadoPrestamo.PENDIENTE);
             Prestamo prestamoGuardado = prestamoRepository.save(prestamo);
 
-            // Registrar movimientos
-            // Movimiento de salida del acreedor
-            MovimientoStock movSalida = new MovimientoStock();
-            movSalida.setAlmacen(almacen);
-            movSalida.setProducto(producto);
-            movSalida.setDueno(acreedor);
-            movSalida.setTipo(MovimientoStock.TipoMovimiento.PRESTAMO);
-            movSalida.setUnidadMedida(MovimientoStock.UnidadMedida.STICK_SUELTO);
-            movSalida.setCantidad(-dto.getCantidadSticks()); // Negativo
-            movSalida.setReferenciaTipo("PRESTAMO");
-            movSalida.setReferenciaId(prestamoGuardado.getIdPrestamo());
-            movSalida.setObservacion("Préstamo a " + deudor.getNombre() + ": " + dto.getObservacion());
-            movimientoRepository.save(movSalida);
+            // 6. Registrar MOVIMIENTOS (Kardex)
+            // Aquí generamos movimientos separados si es necesario para Sobres y Sticks
+            // para mantener la trazabilidad exacta.
 
-            // Movimiento de entrada del deudor
-            MovimientoStock movEntrada = new MovimientoStock();
-            movEntrada.setAlmacen(almacen);
-            movEntrada.setProducto(producto);
-            movEntrada.setDueno(deudor);
-            movEntrada.setTipo(MovimientoStock.TipoMovimiento.PRESTAMO);
-            movEntrada.setUnidadMedida(MovimientoStock.UnidadMedida.STICK_SUELTO);
-            movEntrada.setCantidad(dto.getCantidadSticks()); // Positivo
-            movEntrada.setReferenciaTipo("PRESTAMO");
-            movEntrada.setReferenciaId(prestamoGuardado.getIdPrestamo());
-            movEntrada.setObservacion("Préstamo de " + acreedor.getNombre() + ": " + dto.getObservacion());
-            movimientoRepository.save(movEntrada);
+            // --- Movimientos de SOBRES (si hubo) ---
+            if (cantSobres > 0) {
+                // Salida Acreedor
+                crearMovimiento(almacen, producto, acreedor, MovimientoStock.TipoMovimiento.PRESTAMO,
+                        MovimientoStock.UnidadMedida.SOBRE_CERRADO, // O usa SOBRE si tienes ese enum
+                        -cantSobres, prestamoGuardado, "Préstamo (Sobres) a " + deudor.getNombre(), dto.getObservacion());
+
+                // Entrada Deudor
+                crearMovimiento(almacen, producto, deudor, MovimientoStock.TipoMovimiento.PRESTAMO,
+                        MovimientoStock.UnidadMedida.SOBRE_CERRADO, // O usa SOBRE
+                        cantSobres, prestamoGuardado, "Préstamo (Sobres) de " + acreedor.getNombre(), dto.getObservacion());
+            }
+
+            // --- Movimientos de STICKS (si hubo) ---
+            if (cantSticks > 0) {
+                // Salida Acreedor
+                crearMovimiento(almacen, producto, acreedor, MovimientoStock.TipoMovimiento.PRESTAMO,
+                        MovimientoStock.UnidadMedida.STICK_SUELTO,
+                        -cantSticks, prestamoGuardado, "Préstamo (Sticks) a " + deudor.getNombre(), dto.getObservacion());
+
+                // Entrada Deudor
+                crearMovimiento(almacen, producto, deudor, MovimientoStock.TipoMovimiento.PRESTAMO,
+                        MovimientoStock.UnidadMedida.STICK_SUELTO,
+                        cantSticks, prestamoGuardado, "Préstamo (Sticks) de " + acreedor.getNombre(), dto.getObservacion());
+            }
 
             return ResponseEntity.status(HttpStatus.CREATED)
                     .body(mapToPrestamoDTO(prestamoGuardado));
@@ -229,9 +252,28 @@ public class PrestamoController {
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.internalServerError()
                     .body("Error: " + e.getMessage());
         }
+    }
+
+    // Método auxiliar para no repetir código en los movimientos
+    private void crearMovimiento(Almacen alm, Producto prod, Usuario dueno,
+                                 MovimientoStock.TipoMovimiento tipo,
+                                 MovimientoStock.UnidadMedida unidad,
+                                 int cantidad, Prestamo ref, String obsSistema, String obsUsuario) {
+        MovimientoStock mov = new MovimientoStock();
+        mov.setAlmacen(alm);
+        mov.setProducto(prod);
+        mov.setDueno(dueno);
+        mov.setTipo(tipo);
+        mov.setUnidadMedida(unidad);
+        mov.setCantidad(cantidad);
+        mov.setReferenciaTipo("PRESTAMO");
+        mov.setReferenciaId(ref.getIdPrestamo());
+        mov.setObservacion(obsSistema + (obsUsuario != null ? " | " + obsUsuario : ""));
+        movimientoRepository.save(mov);
     }
 
     // ==========================================
@@ -269,7 +311,7 @@ public class PrestamoController {
     private PrestamoResponseDTO mapToPrestamoDTO(Prestamo p) {
         PrestamoResponseDTO dto = new PrestamoResponseDTO();
         dto.setIdPrestamo(p.getIdPrestamo());
-        dto.setFecha(p.getFecha());
+        dto.setFecha(p.getFechaPrestamo());
         dto.setEstado(p.getEstado().name());
 
         dto.setIdSocioDeudor(p.getSocioDeudor().getIdUsuario());
@@ -280,6 +322,9 @@ public class PrestamoController {
 
         dto.setIdProducto(p.getProducto().getIdProducto());
         dto.setNombreProducto(p.getProducto().getNombre());
+
+        // AHORA MAPEAMOS AMBOS
+        dto.setCantidadSobres(p.getCantidadSobres());
         dto.setCantidadSticks(p.getCantidadSticks());
 
         if (p.getPedidoOrigen() != null) {

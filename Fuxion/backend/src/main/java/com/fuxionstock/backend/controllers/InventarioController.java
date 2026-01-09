@@ -3,6 +3,7 @@ package com.fuxionstock.backend.controllers;
 import com.fuxionstock.backend.dto.*;
 import com.fuxionstock.backend.entity.*;
 import com.fuxionstock.backend.repository.*;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -114,28 +115,22 @@ public class InventarioController {
     // (Cuando un socio te envía productos)
     // ==========================================
     @PostMapping("/entrada")
+    @Transactional // <--- Agrega esto para revertir cambios si algo falla
     public ResponseEntity<?> registrarEntrada(@RequestBody RegistrarEntradaDTO dto) {
         try {
             Usuario socio = usuarioRepository.findById(dto.getIdSocio())
                     .orElseThrow(() -> new RuntimeException("Socio no encontrado"));
-
             Almacen almacen = almacenRepository.findById(dto.getIdAlmacen())
                     .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
 
-            // Procesar cada producto
             for (ProductoEntradaDTO prodDto : dto.getProductos()) {
                 Producto producto = productoRepository.findById(prodDto.getIdProducto())
                         .orElseThrow(() -> new RuntimeException("Producto no encontrado: " + prodDto.getIdProducto()));
 
-                // Buscar o crear inventario
                 Inventario inv = inventarioRepository
-                        .findByDuenoIdUsuarioAndProductoIdProducto(
-                                socio.getIdUsuario(),
-                                producto.getIdProducto()
-                        )
+                        .findByDuenoIdUsuarioAndProductoIdProducto(socio.getIdUsuario(), producto.getIdProducto())
                         .orElse(new Inventario());
 
-                // Si es nuevo
                 if (inv.getIdInventario() == null) {
                     inv.setAlmacen(almacen);
                     inv.setDueno(socio);
@@ -144,115 +139,96 @@ public class InventarioController {
                     inv.setCantidadSticks(0);
                 }
 
-                // Sumar stock
                 inv.setCantidadSobres(inv.getCantidadSobres() + prodDto.getCantidadSobres());
                 inv.setCantidadSticks(inv.getCantidadSticks() + prodDto.getCantidadSticks());
-
                 inventarioRepository.save(inv);
 
-                // Registrar movimiento
-                MovimientoStock movimiento = new MovimientoStock();
-                movimiento.setAlmacen(almacen);
-                movimiento.setProducto(producto);
-                movimiento.setDueno(socio);
-                movimiento.setTipo(MovimientoStock.TipoMovimiento.ENTRADA);
-                movimiento.setReferenciaTipo("ENVIO");
-                movimiento.setObservacion(dto.getObservacion());
-
+                // Registrar Movimiento de SOBRES
                 if (prodDto.getCantidadSobres() > 0) {
-                    movimiento.setUnidadMedida(MovimientoStock.UnidadMedida.SOBRE_CERRADO);
-                    movimiento.setCantidad(prodDto.getCantidadSobres());
-                    movimientoRepository.save(movimiento);
+                    registrarMovimiento(almacen, socio, producto, MovimientoStock.TipoMovimiento.ENTRADA,
+                            MovimientoStock.UnidadMedida.SOBRE_CERRADO, prodDto.getCantidadSobres(),
+                            "ENVIO", dto.getObservacion());
                 }
 
+                // Registrar Movimiento de STICKS
                 if (prodDto.getCantidadSticks() > 0) {
-                    MovimientoStock movSticks = new MovimientoStock();
-                    movSticks.setAlmacen(almacen);
-                    movSticks.setProducto(producto);
-                    movSticks.setDueno(socio);
-                    movSticks.setTipo(MovimientoStock.TipoMovimiento.ENTRADA);
-                    movSticks.setUnidadMedida(MovimientoStock.UnidadMedida.STICK_SUELTO);
-                    movSticks.setCantidad(prodDto.getCantidadSticks());
-                    movSticks.setReferenciaTipo("ENVIO");
-                    movSticks.setObservacion(dto.getObservacion());
-                    movimientoRepository.save(movSticks);
+                    registrarMovimiento(almacen, socio, producto, MovimientoStock.TipoMovimiento.ENTRADA,
+                            MovimientoStock.UnidadMedida.STICK_SUELTO, prodDto.getCantidadSticks(),
+                            "ENVIO", dto.getObservacion());
                 }
             }
-
             return ResponseEntity.ok("Entrada registrada correctamente");
-
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Error: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Error: " + e.getMessage());
         }
     }
 
     // ==========================================
-    // 4. ABRIR SOBRE (Convertir sobres en sticks)
-    // POST /api/inventario/abrir-sobre
+    // 4. ABRIR SOBRE (CORREGIDO)
     // ==========================================
     @PostMapping("/abrir-sobre")
+    @Transactional // <--- Vital aquí
     public ResponseEntity<?> abrirSobre(@RequestBody AbrirSobreDTO dto) {
         try {
             Usuario socio = usuarioRepository.findById(dto.getIdSocio())
                     .orElseThrow(() -> new RuntimeException("Socio no encontrado"));
-
             Producto producto = productoRepository.findById(dto.getIdProducto())
                     .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
-
             Almacen almacen = almacenRepository.findById(dto.getIdAlmacen())
                     .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
 
             Inventario inv = inventarioRepository
-                    .findByDuenoIdUsuarioAndProductoIdProducto(
-                            socio.getIdUsuario(),
-                            producto.getIdProducto()
-                    )
-                    .orElseThrow(() -> new RuntimeException("El socio no tiene este producto en inventario"));
+                    .findByDuenoIdUsuarioAndProductoIdProducto(socio.getIdUsuario(), producto.getIdProducto())
+                    .orElseThrow(() -> new RuntimeException("El socio no tiene este producto"));
 
-            // Validar que tenga suficientes sobres
             if (inv.getCantidadSobres() < dto.getCantidadSobres()) {
-                return ResponseEntity.badRequest()
-                        .body("No tiene suficientes sobres. Disponibles: " + inv.getCantidadSobres());
+                return ResponseEntity.badRequest().body("No hay suficientes sobres.");
             }
 
-            // Calcular sticks
             int sticksGenerados = producto.getSticksPorSobre() * dto.getCantidadSobres();
 
-            // Actualizar inventario
+            // Actualizar stock
             inv.setCantidadSobres(inv.getCantidadSobres() - dto.getCantidadSobres());
             inv.setCantidadSticks(inv.getCantidadSticks() + sticksGenerados);
-
             inventarioRepository.save(inv);
 
-            // Registrar movimiento
-            MovimientoStock movimiento = new MovimientoStock();
-            movimiento.setAlmacen(almacen);
-            movimiento.setProducto(producto);
-            movimiento.setDueno(socio);
-            movimiento.setTipo(MovimientoStock.TipoMovimiento.APERTURA_SOBRE);
-            movimiento.setUnidadMedida(MovimientoStock.UnidadMedida.SOBRE_CERRADO);
-            movimiento.setCantidad(-dto.getCantidadSobres()); // Negativo porque se resta
-            movimiento.setObservacion("Abiertos " + dto.getCantidadSobres() + " sobres, generando " + sticksGenerados + " sticks");
+            // 1. Registrar SALIDA de Sobres
+            registrarMovimiento(almacen, socio, producto, MovimientoStock.TipoMovimiento.APERTURA_SOBRE,
+                    MovimientoStock.UnidadMedida.SOBRE_CERRADO, -dto.getCantidadSobres(),
+                    "APERTURA", "Se abrieron " + dto.getCantidadSobres() + " sobres");
 
-            movimientoRepository.save(movimiento);
+            // 2. Registrar ENTRADA de Sticks (FALTABA ESTO)
+            registrarMovimiento(almacen, socio, producto, MovimientoStock.TipoMovimiento.APERTURA_SOBRE,
+                    MovimientoStock.UnidadMedida.STICK_SUELTO, sticksGenerados,
+                    "APERTURA", "Generados por apertura de sobres");
 
             return ResponseEntity.ok(Map.of(
-                    "mensaje", "Sobre(s) abierto(s) correctamente",
-                    "sobresAbiertos", dto.getCantidadSobres(),
+                    "mensaje", "Apertura realizada",
                     "sticksGenerados", sticksGenerados,
                     "nuevoStockSobres", inv.getCantidadSobres(),
                     "nuevoStockSticks", inv.getCantidadSticks()
             ));
 
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Error: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Error: " + e.getMessage());
         }
+    }
+
+    // Método auxiliar para limpiar el código repetitivo
+    private void registrarMovimiento(Almacen al, Usuario us, Producto pr, MovimientoStock.TipoMovimiento tipo,
+                                     MovimientoStock.UnidadMedida unidad, int cant, String ref, String obs) {
+        MovimientoStock m = new MovimientoStock();
+        m.setAlmacen(al);
+        m.setDueno(us);
+        m.setProducto(pr);
+        m.setTipo(tipo);
+        m.setUnidadMedida(unidad);
+        m.setCantidad(cant);
+        m.setReferenciaTipo(ref);
+        m.setObservacion(obs);
+        // Asumiendo que tienes un campo fecha o @PrePersist en la entidad
+        m.setFecha(java.time.LocalDateTime.now());
+        movimientoRepository.save(m);
     }
 
     // ==========================================

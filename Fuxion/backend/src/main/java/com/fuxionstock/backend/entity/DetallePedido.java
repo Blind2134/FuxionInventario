@@ -6,10 +6,12 @@ import lombok.Setter;
 import lombok.ToString;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
-@Getter // Reemplaza a @Data
-@Setter // Reemplaza a @Data
+import java.math.BigDecimal;
+
+@Getter
+@Setter
 @Entity
-@ToString // Genera toString() pero nos deja excluir campos
+@ToString
 @Table(name = "detalle_pedido")
 public class DetallePedido {
 
@@ -20,8 +22,8 @@ public class DetallePedido {
 
     @ManyToOne
     @JoinColumn(name = "id_pedido")
-    @JsonIgnore       // Protege el JSON (Web)
-    @ToString.Exclude // <--- ¡OBLIGATORIO! Protege la Consola (Java)
+    @JsonIgnore
+    @ToString.Exclude
     private Pedido pedido;
 
     @ManyToOne
@@ -37,4 +39,14 @@ public class DetallePedido {
 
     @Column(name = "cantidad_sticks")
     private Integer cantidadSticks;
+
+    @Column(name = "es_regalo_sobre")
+    private boolean esRegaloSobre; // true = caja gratis
+
+    @Column(name = "es_regalo_stick")
+    private boolean esRegaloStick; // true = sticks gratis
+
+    // Es buena práctica guardar el precio al momento de la venta
+    private BigDecimal precioUnitarioSobre;
+    private BigDecimal precioUnitarioStick;
 }

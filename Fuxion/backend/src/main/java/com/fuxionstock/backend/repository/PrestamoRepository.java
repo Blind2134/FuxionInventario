@@ -9,17 +9,19 @@ import java.util.List;
 public interface PrestamoRepository extends JpaRepository<Prestamo, Long> {
 
     // Préstamos pendientes de un deudor
-    List<Prestamo> findBySocioDeudorIdUsuarioAndEstadoOrderByFechaDesc(
+    List<Prestamo> findBySocioDeudorIdUsuarioAndEstadoOrderByFechaPrestamoDesc(
             Long idDeudor,
             Prestamo.EstadoPrestamo estado
     );
 
     // Préstamos donde un socio es acreedor
-    List<Prestamo> findBySocioAcreedorIdUsuarioAndEstadoOrderByFechaDesc(
+    List<Prestamo> findBySocioAcreedorIdUsuarioAndEstadoOrderByFechaPrestamoDesc(
             Long idAcreedor,
             Prestamo.EstadoPrestamo estado
     );
 
     // Todos los préstamos pendientes
-    List<Prestamo> findByEstadoOrderByFechaDesc(Prestamo.EstadoPrestamo estado);
+    List<Prestamo> findByEstadoOrderByFechaPrestamoDesc(Prestamo.EstadoPrestamo estado);
+
+    Long countByEstado(String estado);
 }

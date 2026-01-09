@@ -21,8 +21,10 @@ public class PrestamoResponseDTO {
     private Long idProducto;
     private String nombreProducto;
     private Integer cantidadSticks;
+    private Integer cantidadSobres;
 
     // Pedido relacionado (opcional)
     private Long idPedido;
     private String codigoPedido;
+
 }

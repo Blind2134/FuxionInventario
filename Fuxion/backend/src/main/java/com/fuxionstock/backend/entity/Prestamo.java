@@ -18,31 +18,36 @@ public class Prestamo {
     @Column(name = "id_prestamo")
     private Long idPrestamo;
 
-    @Column(name = "fecha")
-    private LocalDateTime fecha = LocalDateTime.now();
+    @Column(name = "fecha_prestamo") // Agregué _prestamo para ser explícito
+    private LocalDateTime fechaPrestamo = LocalDateTime.now();
 
     @ManyToOne
     @JoinColumn(name = "id_pedido_origen")
     private Pedido pedidoOrigen;
 
     @ManyToOne
-    @JoinColumn(name = "id_almacen")
-    private Almacen almacen;
-
-    @ManyToOne
     @JoinColumn(name = "id_socio_deudor")
-    private Usuario socioDeudor; // El que NO tenía stock
+    private Usuario socioDeudor; // El vendedor que pidió prestado (El que debe)
 
     @ManyToOne
     @JoinColumn(name = "id_socio_acreedor")
-    private Usuario socioAcreedor; // El que PRESTÓ
+    private Usuario socioAcreedor; // El dueño del stock (Al que le deben)
 
     @ManyToOne
     @JoinColumn(name = "id_producto")
     private Producto producto;
 
+
+
+    @Column(name = "cantidad_sobres") // Agregué Sobres
+    private Integer cantidadSobres;
+
     @Column(name = "cantidad_sticks")
     private Integer cantidadSticks;
+
+    @ManyToOne
+    @JoinColumn(name = "id_almacen")
+    private Almacen almacen;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "estado")

@@ -6,13 +6,17 @@ import com.fuxionstock.backend.entity.*;
 import com.fuxionstock.backend.repository.*;
 import com.fuxionstock.backend.service.PedidoService;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.ArrayList; // Importante para inicializar lista si es necesario
 
-@Service // ¡Importante! Esto le dice a Spring que esta es la clase que hace el trabajo
+@Service
+@RequiredArgsConstructor
 public class PedidoServiceImpl implements PedidoService {
 
     @Autowired
@@ -23,10 +27,9 @@ public class PedidoServiceImpl implements PedidoService {
     private InventarioRepository inventarioRepository;
     @Autowired
     private PedidoRepository pedidoRepository;
+    @Autowired
+    private PrestamoRepository prestamoRepository;
 
-    // ==========================================================
-    // MÉTODO 1: CREAR EL PEDIDO (Descuenta stock)
-    // ==========================================================
     @Override
     @Transactional
     public Pedido crearPedido(CrearPedidoDTO datos) {
@@ -35,18 +38,30 @@ public class PedidoServiceImpl implements PedidoService {
         Usuario vendedor = usuarioRepository.findById(datos.getIdVendedor())
                 .orElseThrow(() -> new RuntimeException("Vendedor no encontrado"));
 
-        // 2. Crear Cabecera del Pedido
+        // 2. Cabecera Pedido
         Pedido nuevoPedido = new Pedido();
         nuevoPedido.setVendedor(vendedor);
         nuevoPedido.setClienteNombre(datos.getClienteNombre());
         nuevoPedido.setClienteTelefono(datos.getClienteTelefono());
         nuevoPedido.setClienteDireccion(datos.getClienteDireccion());
         nuevoPedido.setEstado(Pedido.EstadoPedido.PENDIENTE);
+        nuevoPedido.setFechaCreacion(LocalDateTime.now());
+        nuevoPedido.setCodigoPedido("PED-" + System.currentTimeMillis());
 
-        // Asignamos almacén por defecto (ID 1)
+        // Inicializamos la lista de detalles para evitar NullPointerException
+        if (nuevoPedido.getDetalles() == null) {
+            nuevoPedido.setDetalles(new ArrayList<>());
+        }
+
         Almacen almacen = new Almacen();
         almacen.setIdAlmacen(1L);
         nuevoPedido.setAlmacen(almacen);
+
+        // =====================================================================
+        // CAMBIO CLAVE 1: GUARDAR EL PEDIDO ANTES DE PROCESAR ITEMS
+        // Esto genera el ID del pedido en la BD para que los préstamos puedan vincularse
+        // =====================================================================
+        nuevoPedido = pedidoRepository.save(nuevoPedido);
 
         BigDecimal totalVenta = BigDecimal.ZERO;
 
@@ -56,50 +71,87 @@ public class PedidoServiceImpl implements PedidoService {
             Producto producto = productoRepository.findById(item.getIdProducto())
                     .orElseThrow(() -> new RuntimeException("Producto no existe ID: " + item.getIdProducto()));
 
-            Inventario inv = inventarioRepository.findByDuenoIdUsuarioAndProductoIdProducto(vendedor.getIdUsuario(), producto.getIdProducto())
-                    .orElseThrow(() -> new RuntimeException("El socio no tiene inventario de " + producto.getNombre()));
+            // A. DETERMINAR DUEÑO DEL STOCK
+            Long idDuenoStock = (item.getIdDuenoStock() != null) ? item.getIdDuenoStock() : vendedor.getIdUsuario();
 
-            // VALIDACIÓN CRÍTICA: SOLO STICKS SUELTOS
-            if (inv.getCantidadSticks() < item.getCantidadSticks()) {
-                throw new RuntimeException("Stock insuficiente de sticks para: " + producto.getNombre() +
-                        ". Tienes " + inv.getCantidadSticks() + ", necesitas " + item.getCantidadSticks() +
-                        ". ¡Usa el botón ABRIR SOBRE primero!");
+            Usuario duenoStock = usuarioRepository.findById(idDuenoStock)
+                    .orElseThrow(() -> new RuntimeException("Dueño de stock no encontrado ID: " + idDuenoStock));
+
+            // B. BUSCAR INVENTARIO
+            Inventario inv = inventarioRepository.findByDuenoIdUsuarioAndProductoIdProducto(idDuenoStock, producto.getIdProducto())
+                    .orElseThrow(() -> new RuntimeException("El socio " + duenoStock.getNombre() + " no tiene inventario de " + producto.getNombre()));
+
+            // C. VALIDAR Y RESTAR
+            int sobresPedidos = item.getCantidadSobres() != null ? item.getCantidadSobres() : 0;
+            int sticksPedidos = item.getCantidadSticks() != null ? item.getCantidadSticks() : 0;
+
+            if (inv.getCantidadSobres() < sobresPedidos) {
+                throw new RuntimeException("Stock insuficiente (Sobres) de " + producto.getNombre() + " donde " + duenoStock.getNombre());
+            }
+            if (inv.getCantidadSticks() < sticksPedidos) {
+                throw new RuntimeException("Stock insuficiente (Sticks) de " + producto.getNombre() + " donde " + duenoStock.getNombre());
             }
 
-            // Restar Stock
-            inv.setCantidadSticks(inv.getCantidadSticks() - item.getCantidadSticks());
+            inv.setCantidadSobres(inv.getCantidadSobres() - sobresPedidos);
+            inv.setCantidadSticks(inv.getCantidadSticks() - sticksPedidos);
             inventarioRepository.save(inv);
 
-            // Crear Detalle
+            // D. REGISTRAR PRÉSTAMO (SI APLICA)
+            if (!duenoStock.getIdUsuario().equals(vendedor.getIdUsuario())) {
+                Prestamo prestamo = new Prestamo();
+                prestamo.setAlmacen(nuevoPedido.getAlmacen());
+
+                // AHORA ESTO FUNCIONA PORQUE nuevoPedido YA TIENE ID (del paso CAMBIO CLAVE 1)
+                prestamo.setPedidoOrigen(nuevoPedido);
+
+                prestamo.setSocioDeudor(vendedor);
+                prestamo.setSocioAcreedor(duenoStock);
+                prestamo.setProducto(producto);
+                prestamo.setCantidadSobres(sobresPedidos);
+                prestamo.setCantidadSticks(sticksPedidos);
+                prestamo.setFechaPrestamo(LocalDateTime.now());
+                prestamo.setEstado(Prestamo.EstadoPrestamo.PENDIENTE);
+
+                prestamoRepository.save(prestamo); // ¡Ya no dará error!
+            }
+
+            // E. CÁLCULOS
+            BigDecimal precioCajaBase = producto.getPrecioReferencial();
+            BigDecimal sticksPorCaja = new BigDecimal(producto.getSticksPorSobre());
+            BigDecimal precioStickBase = precioCajaBase.divide(sticksPorCaja, 2, RoundingMode.HALF_UP);
+
+            BigDecimal costoSobres = item.isEsRegaloSobre() ? BigDecimal.ZERO : precioCajaBase.multiply(new BigDecimal(sobresPedidos));
+            BigDecimal costoSticks = item.isEsRegaloStick() ? BigDecimal.ZERO : precioStickBase.multiply(new BigDecimal(sticksPedidos));
+
+            totalVenta = totalVenta.add(costoSobres).add(costoSticks);
+
+            // F. DETALLE
             DetallePedido detalle = new DetallePedido();
-            detalle.setPedido(nuevoPedido); // Relación bidireccional
+            detalle.setPedido(nuevoPedido); // Vinculamos al pedido guardado
             detalle.setProducto(producto);
-            detalle.setDuenoStock(vendedor);
-            detalle.setCantidadSticks(item.getCantidadSticks());
-            detalle.setCantidadSobres(0);
+            detalle.setDuenoStock(duenoStock);
 
-            // Calcular Precio (Proporcional al Stick)
-            BigDecimal precioCaja = producto.getPrecioReferencial(); // Ej: 120.00
-            BigDecimal sticksPorCaja = new BigDecimal(producto.getSticksPorSobre()); // Ej: 28
+            detalle.setCantidadSobres(sobresPedidos);
+            detalle.setCantidadSticks(sticksPedidos);
+            detalle.setEsRegaloSobre(item.isEsRegaloSobre());
+            detalle.setEsRegaloStick(item.isEsRegaloStick());
+            detalle.setPrecioUnitarioSobre(item.isEsRegaloSobre() ? BigDecimal.ZERO : precioCajaBase);
+            detalle.setPrecioUnitarioStick(item.isEsRegaloStick() ? BigDecimal.ZERO : precioStickBase);
 
-            // Precio Unitario = 120 / 28
-            BigDecimal precioUnitario = precioCaja.divide(sticksPorCaja, 2, RoundingMode.HALF_UP);
-            BigDecimal subtotal = precioUnitario.multiply(new BigDecimal(item.getCantidadSticks()));
-
-            totalVenta = totalVenta.add(subtotal);
-
-            // Agregar a la lista del pedido
             nuevoPedido.getDetalles().add(detalle);
         }
 
+        // =====================================================================
+        // CAMBIO CLAVE 2: ACTUALIZAR Y GUARDAR DE NUEVO
+        // Ahora que sabemos el total y agregamos los detalles, guardamos otra vez
+        // =====================================================================
         nuevoPedido.setMontoTotalVenta(totalVenta);
-        nuevoPedido.setCodigoPedido("PED-" + System.currentTimeMillis());
 
         return pedidoRepository.save(nuevoPedido);
     }
 
     // ==========================================================
-    // MÉTODO 2: CONFIRMAR ENTREGA (Calcula tu ganancia)
+    // MÉTODO 2: CONFIRMAR ENTREGA (Sin cambios)
     // ==========================================================
     @Override
     public Pedido confirmarEntregaAlMotorizado(Long idPedido) {
@@ -107,30 +159,25 @@ public class PedidoServiceImpl implements PedidoService {
                 .orElseThrow(() -> new RuntimeException("Pedido no encontrado"));
 
         if (pedido.getEstado() == Pedido.EstadoPedido.ENTREGADO_MOTORIZADO) {
-            throw new RuntimeException("Este pedido ya fue entregado y la comisión cobrada.");
+            throw new RuntimeException("Este pedido ya fue entregado.");
         }
 
-        // Cambio de estado
         pedido.setEstado(Pedido.EstadoPedido.ENTREGADO_MOTORIZADO);
 
-        // Lógica de Negocio: Calcular Comisión
+        // Calcular ganancia del almacenero (3% min 1 sol max 5 soles)
         BigDecimal comision = calcularComisionLogica(pedido.getMontoTotalVenta());
         pedido.setComisionAlmacenero(comision);
 
         return pedidoRepository.save(pedido);
     }
 
-    // Método privado (No se ve desde fuera, solo lo usa esta clase)
     private BigDecimal calcularComisionLogica(BigDecimal monto) {
         if (monto == null) return BigDecimal.ZERO;
-
         BigDecimal porcentaje = new BigDecimal("0.03");
         BigDecimal calculo = monto.multiply(porcentaje);
-
         BigDecimal minimo = new BigDecimal("1.00");
         BigDecimal maximo = new BigDecimal("5.00");
 
-        // Reglas: Min 1, Max 5
         if (calculo.compareTo(minimo) < 0) return minimo;
         if (calculo.compareTo(maximo) > 0) return maximo;
         return calculo;

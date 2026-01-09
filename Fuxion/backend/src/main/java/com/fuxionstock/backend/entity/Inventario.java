@@ -38,6 +38,16 @@ public class Inventario {
     @Column (name = "cantidad_sticks")
     private Integer cantidadSticks = 0;
 
+    @Column(name = "stock_bajo")
+    private Boolean stockBajo = false;
+
+    public void calcularStockBajo() {
+        int stockMinimo = 10; // Define tu umbral aquí
+        int totalStock = (this.cantidadSobres != null ? this.cantidadSobres : 0) +
+                (this.cantidadSticks != null ? this.cantidadSticks : 0);
+        this.stockBajo = totalStock < stockMinimo;
+    }
+
 
 
 }
